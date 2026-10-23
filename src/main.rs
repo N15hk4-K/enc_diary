@@ -1,9 +1,4 @@
 use std::env; //to read the command line arguments passed to the program
-use std::fs; //to read files
-use std::io::ErrorKind;
-use std::error::Error;
-use std::path::Path; //handles filesystem paths
-use std::process::Command; // configures and runs system commands
 
 mod func;
 
@@ -21,22 +16,22 @@ fn main() {
     let res: Result<(), String> = match args[1].as_str() { // args[1] is a String, we are comparing it with str values
         "decrypt" => {
             println!("You typed decrypt!");
-            decrypt_this(&args[2])
+            func::decrypt_this(&args[2])
         }
         "encrypt" => {
             println!("You typed encrypt!");
-            encrypt_this(&args[2])
+            func::encrypt_this(&args[2])
         }
         "edit" => {
             println!("You typed edit!");
-            call_editor(&args[2])
+            func::call_editor(&args[2])
         }
         _ => {
             Err("Usage: enc-diary <decrypt/encrypt/edit> <file_path>".to_string())
         }
     };
     match res {
-        Ok(()) => return;
-        Err(err) => eprintln!(err);
-    }
+        Ok(()) => return,
+        Err(err) => eprintln!("{}",err),
+    };
 }

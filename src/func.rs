@@ -4,7 +4,7 @@ use argon2::Argon2; //for password hashing
 use chacha20poly1305::{aead::{rand_core::RngCore, Aead, AeadCore, KeyInit, OsRng},
     ChaCha20Poly1305, Key, Nonce
 }; //for encryption
-use std::error::Error;
+//use std::error::Error;  was needed for Box<dyn Error>
 use std::path::Path; //handles filesystem paths
 use std::process::Command; // configures and runs system commands
 use rpassword::prompt_password; //to take password as input
@@ -12,9 +12,9 @@ use rpassword::prompt_password; //to take password as input
 const SALT_LEN: usize = 16;
 const NONCE_LEN: usize = 12;
 
-pub fn call_editor(path: &str) -> Result<(), String>{
+pub fn call_editor(path: &String) -> Result<(), String>{
     let password = rpassword::prompt_password("Password: ")
-        .map_err("Unexpected Error while reading password".to_string())?;
+        .map_err(|_| "Unexpected Error while reading password".to_string())?;
 
     // existing diary -> decrypt it; new diary -> start empty
     let original = if Path::new(path).exists() {
@@ -24,27 +24,22 @@ pub fn call_editor(path: &str) -> Result<(), String>{
         Vec::new()
     };
 
-    let tmp = format!("/tmp/{}.txt", Path::new(path).file_stem().unwrap().to_string());
-    fs::write(&tmp, &original)?;
+    let tmp = format!("/tmp/diary-{}.txt", std::process::id());
+    write_file(&tmp, &original)?;
     let result = run_editor(&tmp, &password, path);
     let _ = fs::remove_file(&tmp); // runs whether run_editor succeeded or failed
-    match result {
-        Ok(_) => {}
-        Err(_) => {
-            println!("Editor exited with an error");
-        }
-    };
+    result
 }
 
-pub fn run_editor(tmp: &str, password: &str, path: &str) -> Result<(), Box<dyn Error>> {
-    let status = Command::new("vim").args(["-n", "-i", "NONE", tmp]).status();
+pub fn run_editor(tmp: &String, password: &str, path: &str) -> Result<(), String> {
+    let status = Command::new("vim").args(["-n", "-i", "NONE", tmp]).status()
+        .map_err(|_| format!("Could not open vim"))?;
     if !status.success() {
         return Err("editor exited with an error".to_string());
     }
     let edited = get_contents(tmp)?;
     let encrypted = encrypt(&password, &edited)?;
-    fs::write(path, &encrypted)?;
-    Ok(())
+    write_file(path, &encrypted)
 }
 
 pub fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; 32],String> {
@@ -91,20 +86,24 @@ pub fn decrypt(password: &str, data: &[u8]) -> Result<Vec<u8>, String> {
 
     cipher
         .decrypt(nonce, ciphertext)
-        .map_err(|_| "wrong password or corrupted file")
+        .map_err(|_| "wrong password or corrupted file".to_string())
 }
 
 pub fn get_contents(file_path: &String) -> Result<Vec<u8>, String> {
     match fs::read(file_path) {
-        Ok(data) => data,
+        Ok(data) => Ok(data),
         Err(error) => {
             match error.kind() {
-                ErrorKind::NotFound => "File Not Found".to_string(),
-                ErrorKind::PermissionDenied => "Permission denied".to_string(),
-                _ => "Unexpected Error while reading file".to_string()
+                ErrorKind::NotFound => Err("File Not Found".to_string()),
+                ErrorKind::PermissionDenied => Err("Permission denied".to_string()),
+                _ => Err("Unexpected Error while reading file".to_string())
             }
         }
     }
+}
+
+fn write_file(path: &str, data: &[u8]) -> Result<(), String> {
+    fs::write(path, data).map_err(|e| format!("Failed to write {path}: {e}"))
 }
 
 pub fn encrypt_this(file_path: &String) -> Result<(), String> {
@@ -118,36 +117,34 @@ pub fn encrypt_this(file_path: &String) -> Result<(), String> {
     //};   --> this was my initial attempt, but the below code is more compact
     
     let password = rpassword::prompt_password("Password? : ")
-        .map_err(|e| "Unexpected error while reading passsword".to_string())?;
+        .map_err(|_| "Unexpected error while reading passsword".to_string())?;
 
-    let cipher_text = encrypt(&password, contents)?;
-    fs::write("poem_enc.txt", &cipher_text)
-        .map_err(|_| "Failed to write file".to_string())?;
+    let cipher_text = encrypt(&password, &contents)?;
+    let out_path = encrypted_name(file_path, 1);
+    write_file(&out_path, &cipher_text)?;
+    println!("Encrypted file written to {out_path}");
     Ok(())
 }
 
 pub fn decrypt_this(file_path: &String) -> Result<(), String> {
     let contents = get_contents(file_path)?;
     let password = rpassword::prompt_password("Password? : ")
-        .map_err(|e| "Unexpected error while reading password".to_string());
-    let plain_text = decrypt(&password, contents)?;
-    fs::write("poem_enc_denc.txt", &plain_text)
-        .map_err(|_| "Failed to write file".to_string())?;
+        .map_err(|_| "Unexpected error while reading password".to_string())?;
+    let plain_text = decrypt(&password, &contents)?;
+    let out_path = encrypted_name(file_path, 2);
+    write_file(&out_path, &plain_text)?;
+    println!("Decrypted file written to {out_path}");
     Ok(())
 }
 
 fn encrypted_name(file_path: &str, option: u8) -> String {
-    let path = Path::new(file_path).;
+    let path = Path::new(file_path);
     let stem = path
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("output");
 
-    let suff = if option==1 {
-        "enc"
-    } else {
-        "denc"
-    }
+    let suff = if option==1 {"enc"} else {"denc"};
 
     let new_name = match path.extension().and_then(|e| e.to_str()) {
         Some(ext) => format!("{stem}_{suff}.{ext}"),
