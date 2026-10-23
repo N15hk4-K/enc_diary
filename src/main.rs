@@ -9,7 +9,7 @@ fn main() {
     dbg!(&args); //to print the args
     println!("{:?}",args); //have to do it like this cuz vector doesn't implement the Display trait
     if args.len()!=3 {
-        eprintln!("Usage: enc-diary <decrypt/encrypt/edit> <file_path>"); // prints to stderr
+        eprintln!("Usage: enc-diary <decrypt/encrypt/edit/view> <file_path>"); // prints to stderr
         return; // std::process:exit(1) terminates the entire process immediately without running
                 // any destructors
     }
@@ -25,6 +25,10 @@ fn main() {
         "edit" => {
             println!("You typed edit!");
             func::call_editor(&args[2])
+        }
+        "view" => {
+            println!("You typed view!");
+            func::call_viewer(&args[2])
         }
         _ => {
             Err("Usage: enc-diary <decrypt/encrypt/edit> <file_path>".to_string())

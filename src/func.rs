@@ -42,6 +42,24 @@ pub fn run_editor(tmp: &String, password: &str, path: &str) -> Result<(), String
     write_file(path, &encrypted)
 }
 
+pub fn call_viewer(path: &String) -> Result<(), String> {
+    let password = prompt_password("Password: ")
+        .map_err(|_| "Unexpected error while reading password".to_string())?;
+    let plain = decrypt(&password, &get_contents(path)?)?;
+
+    let tmp = format!("/tmp/diary-view-{}.txt", std::process::id());
+    write_file(&tmp, &plain)?;
+
+    let status = Command::new("vim").args(["-R", "-n", "-i", "NONE", &tmp]).status();
+    let _ = fs::remove_file(&tmp);                 // always clean up
+
+    let status = status.map_err(|_| format!("Could not open vim"))?;
+    if !status.success() {
+        return Err("Viewer exited with an error".to_string());
+    }
+    Ok(())
+}
+
 pub fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; 32],String> {
     // Box<dyn Error> is for any kind of error i had initially used it, but then i changed to
     // string to get cleaner error handling
